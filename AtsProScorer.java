@@ -37,9 +37,70 @@ public class AtsProScorer {
         this.weightEducation = wEducation;
         this.weightFormatting = wFormatting;
     }
-}
-        ScoringResult result = scorer.score(cvText, job);
 
-        System.out.println(result.toString());
+     /**
+     * Main scoring method.
+     * @param cvText plain-text CV (extracted)
+     * @param job JobDescription containing structured fields (title, requiredSkills, minExperienceYears, requiredEducationLevel)
+     * @return ScoringResult with breakdown, missing skills, flagged issues, and recommendations.
+     */
+    public ScoringResult score(String cvText, JobDescription job) {
+        // normalize text
+        String cvLower = cvText == null ? "" : cvText.toLowerCase();
+
+        // Extract skills from CV (simple approach: match against job.requiredSkills)
+        Set<String> cvSkills = extractSkillsFromText(cvLower, job.getAllSkillCandidates());
+
+        // Skills match
+        List<String> requiredSkills = job.getRequiredSkills().stream().map(String::toLowerCase).collect(Collectors.toList());
+        int matchedSkillsCount = 0;
+        List<String> matchedSkills = new ArrayList<>();
+        for (String s : requiredSkills) {
+            if (cvSkills.contains(s)) {
+                matchedSkillsCount++;
+                matchedSkills.add(s);
+            }
+        }
+        double skillsScore = requiredSkills.isEmpty() ? 1.0 : ((double) matchedSkillsCount) / requiredSkills.size();
+
+        // Experience match
+        int cvYears = estimateYearsOfExperience(cvLower);
+        double experienceScore = computeExperienceScore(cvYears, job.getMinExperienceYears());
+
+        // Education match
+        String cvEducation = guessEducationLevel(cvLower);
+        double educationScore = computeEducationScore(cvEducation, job.getRequiredEducationLevel());
+
+        // Formatting score and flags
+        FormattingAnalysis fmt = analyzeFormatting(cvText);
+        double formattingScore = fmt.getFormattingScore();
+
+        // Weighted total
+        double totalScore = skillsScore * weightSkills
+                + experienceScore * weightExperience
+                + educationScore * weightEducation
+                + formattingScore * weightFormatting;
+
+        // Missing skills suggestions
+        List<String> missingSkills = requiredSkills.stream()
+                .filter(s -> !cvSkills.contains(s))
+                .collect(Collectors.toList());
+
+        // Recommendations - simple heuristic-based suggestions
+        List<String> recommendations = generateRecommendations(matchedSkills, missingSkills, cvYears, job, fmt);
+
+        return new ScoringResult(
+                Math.round(totalScore * 100.0),
+                Math.round(skillsScore * 100.0),
+                Math.round(experienceScore * 100.0),
+                Math.round(educationScore * 100.0),
+                Math.round(formattingScore * 100.0),
+                matchedSkills,
+                missingSkills,
+                fmt.getFlags(),
+                recommendations
+        );
     }
 }
+    
+
